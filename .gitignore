@@ -1,0 +1,9 @@
+/build*/
+__pycache__/
+*.py[cod]
+*.exe
+*.obj
+*.o
+Result_TFG.dat
+Result_TFM.dat
+verification_components.csv
