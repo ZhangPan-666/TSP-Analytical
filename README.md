@@ -2,6 +2,8 @@
 
 A C++17 library for computing gravity and magnetic fields of homogeneous triangular spherical prisms. Each prism has three minor great-circle edges and two constant-radius faces. The library evaluates gravity potential and its spatial derivatives through third order, and the exterior magnetic field and its gradient for uniform magnetization. File-based drivers sum contributions from any number of prisms at each observation.
 
+The [regional MMSI solver](MMSI/) evaluates nearby prisms analytically and integrates distant sources together. It computes gravity and magnetic fields for laterally varying source layers and provides serial, OpenMP, and MPI drivers.
+
 [Read the PDF user guide](docs/TSP_CPP_User_Guide.pdf) for the binary format, component order, units, API, and verification workflow.
 
 ## Build and run

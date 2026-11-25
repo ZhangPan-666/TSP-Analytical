@@ -1,0 +1,72 @@
+#!/bin/bash
+#SBATCH --job-name=TSP_MMSI
+#SBATCH --partition=cpu
+#SBATCH --nodes=40
+#SBATCH --ntasks=1800
+#SBATCH --ntasks-per-node=45
+#SBATCH --cpus-per-task=1
+#SBATCH --time=24:00:00
+#SBATCH --output=TSP_MMSI_%j.out
+#SBATCH --error=TSP_MMSI_%j.err
+
+set -euo pipefail
+WORK_SELECTION=${WORK_SELECTION:-1}
+PROFILE=${PROFILE:-intel}
+: "${SLURM_NTASKS:?Submit with sbatch run.pbs}"
+cd "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+
+if [[ "$PROFILE" == intel ]] && ! command -v mpiicpc >/dev/null 2>&1; then
+    set +u
+    source /opt/intel/bin/compilervars.sh intel64
+    set -u
+elif [[ "$PROFILE" == intel-llvm ]] && ! command -v mpiicpx >/dev/null 2>&1; then
+    set +u
+    source /opt/intel/oneapi/setvars.sh
+    set -u
+fi
+
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+export TSP_MMSI_NEAR_DEGREES=${TSP_MMSI_NEAR_DEGREES:-1}
+ulimit -s unlimited
+
+case "$WORK_SELECTION" in
+    1) EXE=Work1_MassShellIntegrationMPI; PARAMETER_FILE=MSIG.ForPar; RESULT_FILE=ResultG.dat; DESCRIPTION="Full gravity: 20 components"; LABEL=MMSI-G ;;
+    2) EXE=Work1_MagnetizationShellIntegrationMPI; PARAMETER_FILE=MSIM.ForPar; RESULT_FILE=ResultM.dat; DESCRIPTION="Full magnetics: 10 components"; LABEL=MMSI-M ;;
+    3) EXE=Work2_MassShellIntegrationVzMPI; PARAMETER_FILE=MSIG.ForPar; RESULT_FILE=ResultG.dat; DESCRIPTION="Gravity: Vz only"; LABEL=MMSI-G ;;
+    4) EXE=Work2_MagnetizationShellIntegrationVectorMPI; PARAMETER_FILE=MSIM.ForPar; RESULT_FILE=ResultM.dat; DESCRIPTION="Magnetics: vector only"; LABEL=MMSI-M ;;
+    *) echo 'WORK_SELECTION must be 1, 2, 3 or 4' >&2; exit 2 ;;
+esac
+[[ -s "$PARAMETER_FILE" ]] || { echo "Missing input: $PARAMETER_FILE" >&2; exit 3; }
+make clean
+make PROFILE="$PROFILE" "$EXE"
+[[ -x "./$EXE" ]] || { echo "Missing executable: $EXE" >&2; exit 4; }
+printf '\n%s +------------------------------------------------------------------\n%s | JOB ALLOCATION\n' "$LABEL" "$LABEL"
+printf '%s | %-18s : %s\n' \
+    "$LABEL" "Work selection" "$WORK_SELECTION" \
+    "$LABEL" "Executable" "$EXE" \
+    "$LABEL" "Compiler profile" "$PROFILE" \
+    "$LABEL" "Job ID" "${SLURM_JOB_ID:-N/A}" \
+    "$LABEL" "Node list" "${SLURM_JOB_NODELIST:-N/A}" \
+    "$LABEL" "Nodes" "${SLURM_JOB_NUM_NODES:-${SLURM_NNODES:-N/A}}" \
+    "$LABEL" "MPI tasks" "$SLURM_NTASKS" \
+    "$LABEL" "Tasks/node" "${SLURM_NTASKS_PER_NODE:-${SLURM_TASKS_PER_NODE:-N/A}}" \
+    "$LABEL" "Threads/rank" "$OMP_NUM_THREADS" \
+    "$LABEL" "Work directory" "$PWD" \
+    "$LABEL" "Start time" "$(date -Is)"
+printf '%s +------------------------------------------------------------------\n' "$LABEL"
+start=$SECONDS
+status=0
+mpirun -np "$SLURM_NTASKS" "./$EXE" || status=$?
+elapsed=$((SECONDS-start))
+if ((status)); then
+    printf 'Error: %s exited with status %s after %s seconds.\n' "$EXE" "$status" "$elapsed" >&2
+    exit "$status"
+fi
+[[ -s "$RESULT_FILE" ]] || { echo "Missing result: $RESULT_FILE" >&2; exit 5; }
+printf '%s +------------------------------------------------------------------\n%s | JOB COMPLETED\n' "$LABEL" "$LABEL"
+printf '%s | %-18s : %s\n' \
+    "$LABEL" "Task" "$DESCRIPTION" \
+    "$LABEL" "Result file" "$RESULT_FILE" \
+    "$LABEL" "Job runtime" "${elapsed}s" \
+    "$LABEL" "End time" "$(date -Is)"
+printf '%s +------------------------------------------------------------------\n' "$LABEL"
